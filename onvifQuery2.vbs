@@ -1,14 +1,43 @@
 ' TODO get end points and namespaces for anything other than the device service from the GetServices reponse
-' https://github.com/mrrekcuf/ONVIF-scripting-tools
 ' by mr rekcuf, modified by Ben Brody
 ' vbscript to query onvif camera
 ' Usage:
 ' cscript /nologo onvifQuery.vbs camera_IP userID password
 '
+Const ForReading = 1, ForWriting = 2, ForAppending = 8, CreateIfNeeded = true
+dim fname 
+set fso = CreateObject("Scripting.FileSystemObject")
+last_ip = ""
+last_user = ""
+last_password = ""
+outPath = "output"
 
-if wscript.arguments.Count < 3 then 
-	wscript.echo vbCrLf & "Usage: " & vbCrLf & " cscript /nologo " & wscript.scriptName  & " camera_IP userID password" & vbCrLf
-	wscript.quit
+if wscript.arguments.Count < 3 then
+	' Get defaults
+	If fso.FileExists("lastDevice.txt") then
+		set file = fso.OpenTextFile("lastDevice.txt", ForReading)
+		last_device = Split(file.ReadAll, vbcrlf)
+		last_ip = last_device(0)
+		last_user = last_device(1)
+		last_password = last_device(2)
+	End If
+
+	' Get details from user
+	ip = inputbox("Device IP address", "IP address", last_ip)
+	user = inputbox("Device ONVIF username", "Username", last_user)
+	password = inputbox("Device ONVIF password", "Password", last_password)
+
+	' Save details for next time
+	set file = fso.OpenTextFile("lastDevice.txt", ForWriting, CreateIfNeeded)
+	file.write ip & vbcrlf & user & vbcrlf & password
+	file.close
+
+	' wscript.echo vbCrLf & "Usage: " & vbCrLf & " cscript /nologo " & wscript.scriptName  & " camera_IP userID password" & vbCrLf
+	' wscript.quit
+else
+	ip = wscript.arguments.item(0)
+	user =  wscript.arguments.item(1)
+	password = wscript.arguments.item(2)
 end if
 
 ' Function to pretty-print XML by adding whitespace between tags
@@ -55,9 +84,7 @@ Function ONVIFExchange(service, message, profile)
 	dim exchange
 	set exchange = CreateObject("Scripting.Dictionary")
 
-	url = "http://" & wscript.arguments.item(0) & "/onvif/" & service
-	user =  wscript.arguments.item(1)
-	password = wscript.arguments.item(2)
+	url = "http://" & ip & "/onvif/" & service
 
 	command = commands(message)
 	if profile <> "" then
@@ -130,8 +157,11 @@ End Function
 
 Function writeToFile(outFile, string)
 	Set objFSO = CreateObject("Scripting.FileSystemObject")
+	If Not objFSO.FolderExists(outPath) Then
+		objFSO.CreateFolder(outpath)
+	End If
 	' Create the text file
-	Set objFile = objFSO.CreateTextFile(outFile, True)
+	Set objFile = objFSO.CreateTextFile(objFSO.BuildPath(outPath, outFile), True)
 	' Write a test string to the file
 	objFile.Write string
 	' Close the file
@@ -168,28 +198,6 @@ commands.Add "GetStreamUri", _
 
 commands.Add "GetNodes", _
 	"<GetNodes xmlns='http://www.onvif.org/ver20/ptz/wsdl'/>"
-
-' GetDeviceInformation=_
-' "<GetDeviceInformation xmlns='http://www.onvif.org/ver10/device/wsdl'/>"
-
-' GetServices=_
-' "<GetServices xmlns='http://www.onvif.org/ver10/device/wsdl'>" +_
-' "<IncludeCapability>true</IncludeCapability>" +_
-' "</GetServices>"
-
-' GetProfiles=_
-' "<GetProfiles xmlns='http://www.onvif.org/ver10/media/wsdl'/>"
-
-' GetStreamUri=_
-' "<GetStreamUri xmlns='http://www.onvif.org/ver20/media/wsdl'>" +_
-' "<Protocol>RtspOverHttp</Protocol>" +_
-' "<ProfileToken>REPLACEPROFILE</ProfileToken>" +_
-' "</GetStreamUri>"
-
-' GetNodes=_
-' "<GetNodes xmlns='http://www.onvif.org/ver10/ptz/wsdl'>" +_
-' "</GetNodes>"
-
 
 xxxx= _
 "xmlns:SOAP-ENC='http://www.w3.org/2003/05/soap-encoding' " +_  
@@ -262,112 +270,4 @@ For Each item In items
 	x = x + 1
 Next
 
-
-' dim profile(10), streamUri(10)
-
-
-' index= 0
-
-
-' url = "http://" & wscript.arguments.item(0) & "/onvif/device_service"
-' user =  wscript.arguments.item(1)
-' password = wscript.arguments.item(2)
-
-' with CreateObject("MSXML2.ServerXMLHTTP.6.0")
-
-' 	.open "POST", url, False , user, password
-' 	.setRequestHeader "Content-Type", "application/soap+xml; charset=utf-8"
-' 	' .setRequestHeader "Accept-Encoding", "gzip, deflate"
-' 	.setRequestHeader "Connection", "keep-alive"
-
-' 	lResolve = 30 * 1000
-' 	lConnect = 60 * 1000
-' 	lSend = 30 * 1000
-' 	lReceive = 120 * 1000
-' 	.setTimeouts lResolve, lConnect, lSend, lReceive
-	
-' 	xml = SOAPRequest(GetDeviceInformation)
-' 	WScript.Echo "Sending:" & vbCrLf & prettyXml(xml) & vbCrLf
-' 	.send xml
-' 	xmlDoc.loadXML(.responseText)
-' 	httpCode = "HTTP " & .Status & " " & .StatusText
-' 	WScript.Echo "Got:" & vbCrLf & httpCode & vbCrLf & prettyXml(xmlDoc.xml) & vbCrLf
-
-' 	manufacturer = xmlDoc.selectNodes("//tds:Manufacturer")(0).text
-' 	model = xmlDoc.selectNodes("//tds:Model")(0).text
-' 	fname = manufacturer & "_" & model
-' 	writeToFile fname & "_GetDeviceInformation.xml", prettyXml(xml)
-' 	writeToFile fname & "_GetDeviceInformationResponse.xml", prettyXml(xmlDoc.xml)
-
-' 	xml = SOAPRequest(GetProfiles)
-' 	WScript.Echo "Sending:"
-' 	WScript.Echo prettyXml(xml)
-' 	WScript.Echo
-
-' 	On Error Resume Next
-' 	.open "POST", url, False , user, password
-' 	.send xml
-
-' 	xmlDoc.loadXML(.responseText)
-' 	WScript.Echo "Got:"
-' 	httpCode = "HTTP " & .Status & " " & .StatusText
-' 	WScript.Echo httpCode
-' 	WScript.Echo prettyXml(xmlDoc.xml)
-' 	WScript.Echo
-
-
-' 	If Err.Number = 0 Then 
-
-' 		Set items = xmlDoc.selectNodes("//trt:Profiles")
-
-' 		WScript.Echo "Found " & items.length & " Profile(s)."
-' 		WScript.Echo
-  	
-' 		x = 0
-' 		y = 0 
-'   		For Each item In items
-' 			profile(x) = item.getAttribute("token")
-' 	    		WScript.Echo " Profile " &x &" token: " & item.getAttribute("token") &" Name: " & item.selectNodes("tt:Name")(0).text
-
-' 			.open "POST", url, False , user, password
-' 			.setRequestHeader "Content-Type", "application/soap+xml; charset=utf-8" 
-' 			.setRequestHeader "Accept-Encoding", "gzip, deflate"
-' 			.setRequestHeader "Connection", "keep-alive"
-' 			xml = Replace(SOAPRequest(GetStreamUri), "REPLACEPROFILE", profile(x))
-' 			WScript.Echo "Sending:"
-' 			WScript.Echo prettyXml(xml)
-' 			WScript.Echo
-' 			.send xml
-
-' 		   	xmlDoc.loadXML(.responseText)
-' 			WScript.Echo "Got:"
-' 			httpCode = "HTTP " & .Status & " " & .StatusText
-' 			WScript.Echo httpCode
-' 			WScript.Echo prettyXml(xmlDoc.xml)
-' 			WScript.Echo
-' 			Set itemStreams = xmlDoc.selectNodes("//tr2:Uri")
-' 	  		For Each itemStream In itemStreams
-' 				streamUri(y) = itemStream.text
-' 	    			WScript.Echo "   Found stream: " &itemStream.text 
-' 				y =y + 1
-' 	  		Next
-' 			if streamUri(y) <> "" then exit for 
-' 			x = x +1
-'   		Next
-
-' 	elseif  Err.Number = -2147012889 then
-
-' 		wscript.Echo "Invalid IP Address or Hostname. Error code: " +hex(Err.Number)
-
-' 	else
-
-' 		wscript.Echo "Error code: " + hex(Err.Number)
-
-' 	end if
-
-' 	On Error GoTo 0
-
-' end with
-
 WScript.Quit
-
