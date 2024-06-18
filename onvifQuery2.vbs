@@ -1,8 +1,9 @@
 ' TODO get end points and namespaces for anything other than the device service from the GetServices reponse
 ' by mr rekcuf, modified by Ben Brody
 ' vbscript to query onvif camera
-' Usage:
-' cscript /nologo onvifQuery.vbs camera_IP userID password
+' Usage - one of the following:
+' cscript /nologo onvifQuery2.vbs
+' cscript /nologo onvifQuery2.vbs camera_IP userID password
 '
 Const ForReading = 1, ForWriting = 2, ForAppending = 8, CreateIfNeeded = true
 dim fname 
