@@ -187,6 +187,9 @@ commands.Add "GetServices", _
 		"<IncludeCapability>true</IncludeCapability>" +_
 	"</GetServices>"
 
+commands.Add "GetCapabilities", _
+	"<GetCapabilities xmlns='http://www.onvif.org/ver10/device/wsdl'/>"
+
 commands.Add "GetProfiles", _
 	"<GetProfiles xmlns='http://www.onvif.org/ver10/media/wsdl'/>"
 
@@ -198,6 +201,12 @@ commands.Add "GetStreamUri", _
 
 commands.Add "GetNodes", _
 	"<GetNodes xmlns='http://www.onvif.org/ver20/ptz/wsdl'/>"
+
+commands.Add "GetOptions", _
+	"<GetOptions xmlns='http://www.onvif.org/ver20/imaging/wsdl'/>"
+
+commands.Add "GetMoveOptions", _
+	"<GetMoveOptions xmlns='http://www.onvif.org/ver20/imaging/wsdl'/>"
 
 xxxx= _
 "xmlns:SOAP-ENC='http://www.w3.org/2003/05/soap-encoding' " +_  
@@ -242,13 +251,16 @@ writeToFiles exchange, fname
 set exchange = ONVIFExchange("device_service", "GetServices", "")
 writeToFiles exchange, fname
 
+set exchange = ONVIFExchange("device_service", "GetCapabilities", "")
+writeToFiles exchange, fname
+
 set exchange = ONVIFExchange("ptz_service", "GetNodes", "")
 writeToFiles exchange, fname
 
 ' Get profiles and stream URI for each one
 dim profile(10), streamUri(10)
 index= 0
-set exchange = ONVIFExchange("device_service", "GetProfiles", "")
+set exchange = ONVIFExchange("device_service", "GetProfiles", "")	' Should be media or media 2 service
 writeToFiles exchange, fname
 Set items = exchange("response").selectNodes("//trt:Profiles")
 WScript.Echo "Found " & items.length & " Profile(s)." & vbCrLf
@@ -258,7 +270,7 @@ For Each item In items
 	profile(x) = item.getAttribute("token")
 	WScript.Echo "Profile " & x & ": Token='" & item.getAttribute("token") & "' Name='" & item.selectNodes("tt:Name")(0).text & "'" & vbCrLf
 
-	set exchange = ONVIFExchange("device_service", "GetStreamUri", profile(x))
+	set exchange = ONVIFExchange("device_service", "GetStreamUri", profile(x))	' Should be media or media 2 service
 	writeToFiles exchange, fname
 	Set itemStreams = exchange("response").selectNodes("//tr2:Uri")
 	For Each itemStream In itemStreams
@@ -269,5 +281,12 @@ For Each item In items
 	if streamUri(y) <> "" then exit for 
 	x = x + 1
 Next
+
+' Get imaging options
+set exchange = ONVIFExchange("imaging_service", "GetOptions", "")
+writeToFiles exchange, fname
+
+set exchange = ONVIFExchange("imaging_service", "GetMoveOptions", "")
+writeToFiles exchange, fname
 
 WScript.Quit
