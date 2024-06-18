@@ -1,4 +1,3 @@
-' TODO get end points and namespaces for anything other than the device service from the GetServices reponse
 ' by mr rekcuf, modified by Ben Brody
 ' vbscript to query onvif camera
 ' Usage - one of the following:
@@ -33,8 +32,6 @@ if wscript.arguments.Count < 3 then
 	file.write ip & vbcrlf & user & vbcrlf & password
 	file.close
 
-	' wscript.echo vbCrLf & "Usage: " & vbCrLf & " cscript /nologo " & wscript.scriptName  & " camera_IP userID password" & vbCrLf
-	' wscript.quit
 else
 	ip = wscript.arguments.item(0)
 	user =  wscript.arguments.item(1)
@@ -81,15 +78,34 @@ Function SOAPRequest(ByVal xml)
 	SOAPRequest = Replace(SOAPRequest, "'", chr(34))
 End Function
 
-Function ONVIFExchange(service, message, profile)
+' Function ONVIFExchange(service, message, token)
+Function ONVIFExchange(services, service_name, message, options, token)
 	dim exchange
 	set exchange = CreateObject("Scripting.Dictionary")
 
-	url = "http://" & ip & "/onvif/" & service
+	' If media2 is not available fallback to media
+	if service_name = "media2" and not services.exists(service_name) then service_name = "media"
 
-	command = commands(message)
-	if profile <> "" then
-		command = replace(command, "REPLACEPROFILE", profile)
+	if not services.exists(service_name) then
+		exchange.Add "url", "Error: ONVIF service not found"
+		exchange.Add "message", message
+		exchange.Add "service", service
+		exchange.Add "request", "Error: ONVIF service not found"
+		exchange.Add "httpResponse", "Error: ONVIF service not found"
+		exchange.Add "response", "Error: ONVIF service not found"
+		exchange.Add "token", token
+		set ONVIFExchange = exchange
+		return
+	end if
+
+	set service = services(service_name)
+
+	url = service("XAddr")
+	service_ns = service("ns")
+
+	command = "<" & message & " xmlns=""" & service_ns & """>" & options & "</" & message & ">"
+	if token <> "" then
+		command = replace(command, "REPLACETOKEN", token)
 	end if
 
 	Set xmlDoc = CreateObject("MSXML2.DOMDocument.6.0")
@@ -129,28 +145,27 @@ Function ONVIFExchange(service, message, profile)
 	If Err.Number = 0 Then 
 		WScript.Echo "Got:" & vbCrLf & httpCode & vbCrLf & prettyXml(xmlDoc.xml) & vbCrLf
 	elseif  Err.Number = -2147012889 then
-		wscript.Echo "Invalid IP Address or Hostname. Error code: " + hex(Err.Number)
+		wscript.Echo "Invalid IP Address or Hostname. Error code: " + hex(Err.Number) & vbCrLf
 	else
-		wscript.Echo "Error code: " + hex(Err.Number)
+		wscript.Echo "Error code: " + hex(Err.Number) & vbCrLf
 	end if
 
 	exchange.Add "url", url
 	exchange.Add "message", message
-	exchange.Add "service", service
+	exchange.Add "service", service_name
 	exchange.Add "request", xml
 	exchange.Add "httpResponse", httpCode
 	exchange.Add "response", xmlDoc
-	exchange.Add "profile", profile
+	exchange.Add "token", token
 
 	set ONVIFExchange = exchange
 End Function
 
 Function writeToFiles(exchange, base_fname)
 	dim fname
-	fname = base_fname & "_" & exchange("service") & "_" & exchange("message")
-	if exchange("profile") <> "" then
-		fname = fname & "_" & exchange("profile")
-	end if
+	dim token: token = ""
+	if exchange("token") <> "" then token = "_" & exchange("token")
+	fname = base_fname & "_" & exchange("service") & token & "_" & exchange("message")
 	writeToFile fname & ".xml", prettyXml(exchange("request"))
 	writeToFile fname & "_http_response.txt", "Response after posting to:" & vbCrLf & exchange("url") & vbCrLf & exchange("httpResponse")
 	writeToFile fname & "Response.xml", prettyXml(exchange("response").xml)
@@ -177,38 +192,7 @@ ns(3) = "xmlns:trt=""http://www.onvif.org/ver10/media/wsdl"""
 ns(4) = "xmlns:tr2=""http://www.onvif.org/ver20/media/wsdl"""
 ns(5) = "xmlns:tds=""http://www.onvif.org/ver10/device/wsdl"""
 
-Dim commands
-Set commands = CreateObject("Scripting.Dictionary")
-
-commands.Add "GetDeviceInformation", _
-	"<GetDeviceInformation xmlns='http://www.onvif.org/ver10/device/wsdl'/>"
-
-commands.Add "GetServices", _
-	"<GetServices xmlns='http://www.onvif.org/ver10/device/wsdl'>" +_
-		"<IncludeCapability>true</IncludeCapability>" +_
-	"</GetServices>"
-
-commands.Add "GetCapabilities", _
-	"<GetCapabilities xmlns='http://www.onvif.org/ver10/device/wsdl'/>"
-
-commands.Add "GetProfiles", _
-	"<GetProfiles xmlns='http://www.onvif.org/ver10/media/wsdl'/>"
-
-commands.Add "GetStreamUri", _
-	"<GetStreamUri xmlns='http://www.onvif.org/ver20/media/wsdl'>" +_
-		"<Protocol>RtspOverHttp</Protocol>" +_
-		"<ProfileToken>REPLACEPROFILE</ProfileToken>" +_
-	"</GetStreamUri>"
-
-commands.Add "GetNodes", _
-	"<GetNodes xmlns='http://www.onvif.org/ver20/ptz/wsdl'/>"
-
-commands.Add "GetOptions", _
-	"<GetOptions xmlns='http://www.onvif.org/ver20/imaging/wsdl'/>"
-
-commands.Add "GetMoveOptions", _
-	"<GetMoveOptions xmlns='http://www.onvif.org/ver20/imaging/wsdl'/>"
-
+' Other namespaces to include above as required
 xxxx= _
 "xmlns:SOAP-ENC='http://www.w3.org/2003/05/soap-encoding' " +_  
 "xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' " +_  
@@ -239,55 +223,122 @@ xxxx= _
 "xmlns:tds='http://www.onvif.org/ver10/device/wsdl' " +_
 "xmlns:tnsaxis='http://www.axis.com/2009/event/topics' "
 
-
 dim exchange
 
+' Initialise ONVIF services with device service
+Dim services, service
+Set services = CreateObject("Scripting.Dictionary")
+Set service = CreateObject("Scripting.Dictionary")
+service.Add "ns", "http://www.onvif.org/ver10/device/wsdl"
+service.Add "XAddr", "http://" & ip & "/onvif/device_service"
+services.Add "device", service
+
 ' Get device information and set output filename to manufacturer and model
-set exchange = ONVIFExchange("device_service", "GetDeviceInformation", "")
-manufacturer = exchange("response").selectNodes("//tds:Manufacturer")(0).text
-model = exchange("response").selectNodes("//tds:Model")(0).text
+set exchange = ONVIFExchange(services, "device", "GetDeviceInformation", "", "")
+manufacturer = exchange("response").selectSingleNode("//tds:Manufacturer").text
+manufacturer = Left(Replace(manufacturer, " ", "_"), 15)
+model = exchange("response").selectSingleNode("//tds:Model").text
+model = Left(Replace(model, " ", "_"), 15)
 fname = manufacturer & "_" & model
 writeToFiles exchange, fname
 
-set exchange = ONVIFExchange("device_service", "GetServices", "")
+' Get services
+opts = "<IncludeCapability>true</IncludeCapability>"
+set exchange = ONVIFExchange(services, "device", "GetServices", opts, "")
 writeToFiles exchange, fname
 
-set exchange = ONVIFExchange("device_service", "GetCapabilities", "")
-writeToFiles exchange, fname
-
-set exchange = ONVIFExchange("ptz_service", "GetNodes", "")
-writeToFiles exchange, fname
-
-' Get profiles and stream URI for each one
-dim profile(10), streamUri(10)
-index= 0
-set exchange = ONVIFExchange("device_service", "GetProfiles", "")	' Should be media or media 2 service
-writeToFiles exchange, fname
-Set items = exchange("response").selectNodes("//trt:Profiles")
-WScript.Echo "Found " & items.length & " Profile(s)." & vbCrLf
-x = 0
-y = 0 
-For Each item In items
-	profile(x) = item.getAttribute("token")
-	WScript.Echo "Profile " & x & ": Token='" & item.getAttribute("token") & "' Name='" & item.selectNodes("tt:Name")(0).text & "'" & vbCrLf
-
-	set exchange = ONVIFExchange("device_service", "GetStreamUri", profile(x))	' Should be media or media 2 service
-	writeToFiles exchange, fname
-	Set itemStreams = exchange("response").selectNodes("//tr2:Uri")
-	For Each itemStream In itemStreams
-		streamUri(y) = itemStream.text
-			WScript.Echo "Found stream: " & itemStream.text & vbCrLf
-		y = y + 1
-	Next
-	if streamUri(y) <> "" then exit for 
-	x = x + 1
+' Save details of all the services
+Dim objRegEx
+Set objRegEx = CreateObject("VBScript.RegExp")
+With objRegEx
+      .Pattern = "^\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}\b$" 
+      .IgnoreCase = True 
+End With
+set xml_services = exchange("response").selectNodes("//tds:Service")
+dim service_ns, service_version, service_name, service_XAddr
+For each xml_service in xml_services
+	Do
+		Set service = CreateObject("Scripting.Dictionary")
+		service_ns = xml_service.selectSingleNode("tds:Namespace").text
+		objRegEx.Pattern = "ver([0-9]{2})\/"
+		set matches = objRegEx.Execute(service_ns)
+		if matches.count = 0 then exit do
+		service_version = matches(0).SubMatches(0)
+		objRegEx.Pattern = "[0-9]{2}\/([^\/]*)\/"
+		set matches = objRegEx.Execute(service_ns)
+		if matches.count = 0 then exit do
+		service_name = matches(0).SubMatches(0)
+		if service_name = "media" and service_version = "20" then
+			service_name = "media2"
+		end if
+		service_XAddr = xml_service.selectSingleNode("tds:XAddr").text
+		WScript.Echo "Service: name='" & service_name & "' version='" & service_version & "' namespace='" & service_ns & "' XAddr='" & service_XAddr & "'" & vbCrLf
+		if service_name = "device" then exit do
+		service.Add "ns", service_ns
+		service.Add "XAddr", service_XAddr
+		services.Add service_name, service
+	Loop While False
 Next
 
-' Get imaging options
-set exchange = ONVIFExchange("imaging_service", "GetOptions", "")
+' Get capabilities
+set exchange = ONVIFExchange(services, "device", "GetCapabilities", "", "")
 writeToFiles exchange, fname
 
-set exchange = ONVIFExchange("imaging_service", "GetMoveOptions", "")
+' Get PTZ nodes
+set exchange = ONVIFExchange(services, "ptz", "GetNodes", "", "")
 writeToFiles exchange, fname
+
+' Get profiles
+index= 0
+Set exchange = ONVIFExchange(services, "media", "GetProfiles", "", "")
+writeToFiles exchange, fname
+Set items = exchange("response").selectNodes("//trt:Profiles")
+count = 0: For Each item in items: count = count + 1: Next
+WScript.Echo "Found " & count & " Profile(s)." & vbCrLf
+
+' Get stream URI for each profile
+' media options:
+' opts =_
+' 	"<StreamSetup>" +_
+' 		"<Stream>RTP-Multicast</Stream>" +_
+' 		"<Transport>" +_
+' 			"<Protocol>RTSP</Protocol>" +_
+' 		"</Transport>" +_
+' 	"</StreamSetup>" +_
+' 	"<ProfileToken>REPLACETOKEN</ProfileToken>"
+' media 2 options:
+opts =_
+	"<Protocol>RtspMulticast</Protocol>" +_
+	"<ProfileToken>REPLACETOKEN</ProfileToken>"
+For Each item In items
+	token = item.getAttribute("token")
+	WScript.Echo "Profile: Token='" & token & "' Name='" & item.selectSingleNode("tt:Name").text & "'" & vbCrLf
+
+	set exchange = ONVIFExchange(services, "media2", "GetStreamUri", opts, token)
+	writeToFiles exchange, fname
+
+	streamUri = exchange("response").selectSingleNode("//tr2:Uri").text	' trt for media, tr2 for media2
+	WScript.Echo "Found stream: " & streamUri & vbCrLf
+Next
+
+' Get video sources
+set exchange = ONVIFExchange(services, "media", "GetVideoSources", "", "")
+writeToFiles exchange, fname
+Set items = exchange("response").selectNodes("//trt:VideoSources")
+count = 0: For Each item in items: count = count + 1: Next
+WScript.Echo "Found " & count & " VideoSource(s)." & vbCrLf
+
+' Get options for each video source
+opts = "<VideoSourceToken>REPLACETOKEN</VideoSourceToken>"
+For Each item in items
+	token = item.getAttribute("token")
+	WScript.Echo "Video source: Token='" & token & "'" & vbCrLf
+
+	set exchange = ONVIFExchange(services, "imaging", "GetOptions", opts, token)
+	writeToFiles exchange, fname
+
+	set exchange = ONVIFExchange(services, "imaging", "GetMoveOptions", opts, token)
+	writeToFiles exchange, fname
+Next
 
 WScript.Quit
