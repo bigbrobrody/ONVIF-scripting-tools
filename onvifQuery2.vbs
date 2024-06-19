@@ -296,30 +296,39 @@ Set items = exchange("response").selectNodes("//trt:Profiles")
 count = 0: For Each item in items: count = count + 1: Next
 WScript.Echo "Found " & count & " Profile(s)." & vbCrLf
 
-' Get stream URI for each profile
-' media options:
-' opts =_
-' 	"<StreamSetup>" +_
-' 		"<Stream>RTP-Multicast</Stream>" +_
-' 		"<Transport>" +_
-' 			"<Protocol>RTSP</Protocol>" +_
-' 		"</Transport>" +_
-' 	"</StreamSetup>" +_
-' 	"<ProfileToken>REPLACETOKEN</ProfileToken>"
-' media 2 options:
+' Get stream URI for each profile using media
 opts =_
-	"<Protocol>RtspMulticast</Protocol>" +_
+	"<StreamSetup>" +_
+		"<Stream>RTP-Multicast</Stream>" +_
+		"<Transport>" +_
+			"<Protocol>RTSP</Protocol>" +_
+		"</Transport>" +_
+	"</StreamSetup>" +_
 	"<ProfileToken>REPLACETOKEN</ProfileToken>"
 For Each item In items
 	token = item.getAttribute("token")
 	WScript.Echo "Profile: Token='" & token & "' Name='" & item.selectSingleNode("tt:Name").text & "'" & vbCrLf
 
-	set exchange = ONVIFExchange(services, "media2", "GetStreamUri", opts, token)
+	set exchange = ONVIFExchange(services, "media", "GetStreamUri", opts, token)
 	writeToFiles exchange, fname
-
-	streamUri = exchange("response").selectSingleNode("//tr2:Uri").text	' trt for media, tr2 for media2
-	WScript.Echo "Found stream: " & streamUri & vbCrLf
 Next
+
+' Get stream URI for each profile using media2
+If services.exists("media2") Then
+	opts =_
+		"<Protocol>RtspMulticast</Protocol>" +_
+		"<ProfileToken>REPLACETOKEN</ProfileToken>"
+	For Each item In items
+		token = item.getAttribute("token")
+		WScript.Echo "Profile: Token='" & token & "' Name='" & item.selectSingleNode("tt:Name").text & "'" & vbCrLf
+
+		set exchange = ONVIFExchange(services, "media2", "GetStreamUri", opts, token)
+		writeToFiles exchange, fname
+
+		' streamUri = exchange("response").selectSingleNode("//tr2:Uri").text	' trt for media, tr2 for media2
+		' WScript.Echo "Found stream: " & streamUri & vbCrLf
+	Next
+End If
 
 ' Get video sources
 set exchange = ONVIFExchange(services, "media", "GetVideoSources", "", "")
