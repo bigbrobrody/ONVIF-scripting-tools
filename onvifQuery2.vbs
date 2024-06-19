@@ -89,13 +89,13 @@ Function ONVIFExchange(services, service_name, message, options, token)
 	if not services.exists(service_name) then
 		exchange.Add "url", "Error: ONVIF service not found"
 		exchange.Add "message", message
-		exchange.Add "service", service
+		exchange.Add "service", service_name
 		exchange.Add "request", "Error: ONVIF service not found"
 		exchange.Add "httpResponse", "Error: ONVIF service not found"
-		exchange.Add "response", "Error: ONVIF service not found"
+		exchange.Add "response", CreateObject("MSXML2.DOMDocument.6.0")
 		exchange.Add "token", token
 		set ONVIFExchange = exchange
-		return
+		Exit Function
 	end if
 
 	set service = services(service_name)
@@ -191,6 +191,7 @@ ns(2) = "xmlns:tt=""http://www.onvif.org/ver10/schema"""
 ns(3) = "xmlns:trt=""http://www.onvif.org/ver10/media/wsdl"""
 ns(4) = "xmlns:tr2=""http://www.onvif.org/ver20/media/wsdl"""
 ns(5) = "xmlns:tds=""http://www.onvif.org/ver10/device/wsdl"""
+ns(6) = "xmlns:tms=""http://www.onvif.org/ver20/media/wsdl"""
 
 ' Other namespaces to include above as required
 xxxx= _
@@ -288,39 +289,48 @@ writeToFiles exchange, fname
 set exchange = ONVIFExchange(services, "ptz", "GetNodes", "", "")
 writeToFiles exchange, fname
 
-' Get profiles
-index= 0
+' Get profiles using media
 Set exchange = ONVIFExchange(services, "media", "GetProfiles", "", "")
 writeToFiles exchange, fname
-Set items = exchange("response").selectNodes("//trt:Profiles")
+Set items = exchange("response").selectNodes("//*[local-name()='Profiles']")
 count = 0: For Each item in items: count = count + 1: Next
 WScript.Echo "Found " & count & " Profile(s)." & vbCrLf
 
 ' Get stream URI for each profile using media
 opts =_
 	"<StreamSetup>" +_
-		"<Stream>RTP-Multicast</Stream>" +_
-		"<Transport>" +_
-			"<Protocol>RTSP</Protocol>" +_
+		"<Stream xmlns=""http://www.onvif.org/ver10/schema"">RTP-Multicast</Stream>" +_
+		"<Transport xmlns=""http://www.onvif.org/ver10/schema"">" +_
+			"<Protocol>UDP</Protocol>" +_
 		"</Transport>" +_
 	"</StreamSetup>" +_
 	"<ProfileToken>REPLACETOKEN</ProfileToken>"
 For Each item In items
 	token = item.getAttribute("token")
-	WScript.Echo "Profile: Token='" & token & "' Name='" & item.selectSingleNode("tt:Name").text & "'" & vbCrLf
+	WScript.Echo "Profile: Token='" & token & "' Name='" & item.selectSingleNode("*[local-name()='Name']").text & "'" & vbCrLf
 
 	set exchange = ONVIFExchange(services, "media", "GetStreamUri", opts, token)
 	writeToFiles exchange, fname
+
+	' streamUri = exchange("response").selectSingleNode("//trt:Uri").text
+	' WScript.Echo "Found stream: " & streamUri & vbCrLf
 Next
 
-' Get stream URI for each profile using media2
 If services.exists("media2") Then
+	' Get profiles using media
+	Set exchange = ONVIFExchange(services, "media2", "GetProfiles", "", "")
+	writeToFiles exchange, fname
+	Set items = exchange("response").selectNodes("//*[local-name()='Profiles']")
+	count = 0: For Each item in items: count = count + 1: Next
+	WScript.Echo "Found " & count & " Profile(s)." & vbCrLf
+
+	' Get stream URI for each profile using media2
 	opts =_
 		"<Protocol>RtspMulticast</Protocol>" +_
 		"<ProfileToken>REPLACETOKEN</ProfileToken>"
 	For Each item In items
 		token = item.getAttribute("token")
-		WScript.Echo "Profile: Token='" & token & "' Name='" & item.selectSingleNode("tt:Name").text & "'" & vbCrLf
+		WScript.Echo "Profile: Token='" & token & "' Name='" & item.selectSingleNode("*[local-name()='Name']").text & "'" & vbCrLf
 
 		set exchange = ONVIFExchange(services, "media2", "GetStreamUri", opts, token)
 		writeToFiles exchange, fname
@@ -333,7 +343,7 @@ End If
 ' Get video sources
 set exchange = ONVIFExchange(services, "media", "GetVideoSources", "", "")
 writeToFiles exchange, fname
-Set items = exchange("response").selectNodes("//trt:VideoSources")
+Set items = exchange("response").selectNodes("//*[local-name()='VideoSources']")
 count = 0: For Each item in items: count = count + 1: Next
 WScript.Echo "Found " & count & " VideoSource(s)." & vbCrLf
 
